@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"reflect"
 	"testing"
 
@@ -31,16 +32,22 @@ func TestNewConfig(t *testing.T) {
 		args       args
 		want       *Config
 		createFile bool
+		clearFunc  func()
 	}{{
 		name: "default config",
 		want: defaultConfig,
 	}, {
 		name: "config from command line ",
+		args: args{ip: "127.0.0.1", port: "1234"},
 		want: wantConfig,
 	}, {
 		name:       "config from file",
+		args:       args{ip: "127.0.0.1", port: "1234"},
 		want:       wantConfig,
 		createFile: true,
+		clearFunc: func() {
+			_ = os.Remove(configFileName)
+		},
 	}}
 
 	for _, tt := range tests {
@@ -51,6 +58,9 @@ func TestNewConfig(t *testing.T) {
 			}
 			if got := NewConfig(tt.args.ip, tt.args.port); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NewConfig() = %v, want %v", got, tt.want)
+			}
+			if tt.clearFunc != nil {
+				tt.clearFunc()
 			}
 		})
 	}
