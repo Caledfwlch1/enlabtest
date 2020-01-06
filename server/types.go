@@ -4,14 +4,20 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/caledfwlch1/enlabtest/types"
+	"github.com/caledfwlch1/enlabtest/db"
 
 	"github.com/caledfwlch1/enlabtest/handlers"
+	"github.com/caledfwlch1/enlabtest/types"
 )
 
 type Config struct {
-	Ip   string
-	Port string
+	Ip       string
+	Port     string
+	Host     string
+	User     string
+	Pass     string
+	Database string
+	Options  string
 }
 
 func (s *Config) FullAddress() string {
@@ -22,19 +28,21 @@ func (s Config) String() string {
 	return s.Ip + ":" + s.Port
 }
 
-type Server struct{}
+type Server struct {
+	db db.Database
+}
 
 func (s *Server) requestHandler(rw http.ResponseWriter, request *http.Request) {
+	if err := validateRequest(request); err != nil {
+		_, _ = fmt.Fprintln(rw, err)
+		return
+	}
+
 	ctx := request.Context()
 
 	srcType := request.Header["Source-Type"]
 	if len(srcType) == 0 {
 		_, _ = fmt.Fprintln(rw, "empty Source-Type")
-		return
-	}
-
-	if request.Body == http.NoBody {
-		_, _ = fmt.Fprintln(rw, "empty request")
 		return
 	}
 
