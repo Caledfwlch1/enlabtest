@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/caledfwlch1/enlabtest/tools"
-
 	"github.com/google/uuid"
 )
 
@@ -39,11 +37,10 @@ func NewDataOperation(userId uuid.UUID, state OperationState, amount float32) *D
 }
 
 func (d *DataOperation) GetAmount() float32 {
-	return tools.IIF(d.State == Lost, -d.Amount, d.Amount).(float32)
-}
-
-func (d *DataOperation) GetInvertAmount() float32 {
-	return -d.GetAmount()
+	if d.State == Lost {
+		return -d.Amount
+	}
+	return d.Amount
 }
 
 func (o OperationState) String() string {

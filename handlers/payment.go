@@ -8,15 +8,9 @@ import (
 	"github.com/caledfwlch1/enlabtest/types"
 )
 
-func Payment(ctx context.Context, db db.Database, data *types.DataOperation) string {
+func Payment(ctx context.Context, db db.Database, data *types.DataOperation) (float32, error) {
 	if data.State != types.Win {
-		return types.UnknownState
+		return -1, types.ErrorUnknownState
 	}
-
-	err := db.DoOperation(ctx, data)
-	if err != nil {
-		return err.Error()
-	}
-
-	return types.OperationOk
+	return db.ApplyTransaction(ctx, data)
 }

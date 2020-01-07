@@ -15,19 +15,15 @@ import (
 )
 
 var (
-	Host     = "localhost"
-	User     = "docker"
-	Pass     = "docker"
-	Database = "test"
-	Options  = "sslmode=disable"
+	connStr = "postgres://docker:docker@127.0.0.1/test?sslmode=disable"
 )
 
-func Test_postgres_DoOperation(t *testing.T) {
+func Test_postgres_ApplyTransaction(t *testing.T) {
 	type args struct {
 		d *types.DataOperation
 	}
 
-	p, err := NewDatabase(Host, User, Pass, Database, Options)
+	p, err := NewDatabase(connStr)
 	require.NoError(t, err, "error open database")
 	ctx := context.Background()
 
@@ -42,22 +38,22 @@ func Test_postgres_DoOperation(t *testing.T) {
 	}{
 		{
 			name:  "win200",
-			args:  args{d: types.NewDataOperation(*userId, types.Win, 200)},
+			args:  args{d: types.NewDataOperation(userId, types.Win, 200)},
 			wants: 200,
 		},
 		{
 			name:  "lost-100",
-			args:  args{d: types.NewDataOperation(*userId, types.Lost, 100)},
+			args:  args{d: types.NewDataOperation(userId, types.Lost, 100)},
 			wants: 100,
 		},
 		{
 			name:  "lost-100",
-			args:  args{d: types.NewDataOperation(*userId, types.Lost, 100)},
+			args:  args{d: types.NewDataOperation(userId, types.Lost, 100)},
 			wants: 0,
 		},
 		{
 			name:    "lost-100",
-			args:    args{d: types.NewDataOperation(*userId, types.Lost, 100)},
+			args:    args{d: types.NewDataOperation(userId, types.Lost, 100)},
 			wants:   0,
 			wantErr: true,
 		},
@@ -66,11 +62,11 @@ func Test_postgres_DoOperation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
-			if err := p.DoOperation(ctx, tt.args.d); (err != nil) != tt.wantErr {
+			if _, err := p.ApplyTransaction(ctx, tt.args.d); (err != nil) != tt.wantErr {
 				t.Errorf("postgres.DoOperation() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
-			balance, err := p.GetBalance(ctx, &tt.args.d.UserId)
+			balance, err := p.GetBalance(ctx, tt.args.d.UserId)
 			assert.NoError(t, err, "error getting balance")
 			assert.Equal(t, tt.wants, balance, "balance mismatch")
 
@@ -99,14 +95,14 @@ func Test_postgres_RollBackLastN(t *testing.T) {
 		},
 	}
 
-	db, err := NewDatabase(Host, User, Pass, Database, Options)
+	db, err := NewDatabase(connStr)
 	require.NoError(t, err, "error open database")
 	ctx := context.Background()
 
 	userId, err := db.CreateUser(ctx)
 	require.NoError(t, err, "error creating user")
 
-	createTransactions(t, ctx, db, *userId)
+	createTransactions(t, ctx, db, userId)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -148,7 +144,7 @@ func prepareTestData(t *testing.T, ctx context.Context, db db.Database, odd bool
 	}
 
 	for u := range out.userBalance {
-		bal, err := db.GetBalance(ctx, &u)
+		bal, err := db.GetBalance(ctx, u)
 		if err != nil {
 			assert.NoError(t, err, "error getting balance")
 		}
@@ -162,7 +158,7 @@ func prepareTestData(t *testing.T, ctx context.Context, db db.Database, odd bool
 
 func checkBalances(t *testing.T, ctx context.Context, db db.Database, rbd *rollBackTestData) {
 	for u, b := range rbd.userBalance {
-		bal, err := db.GetBalance(ctx, &u)
+		bal, err := db.GetBalance(ctx, u)
 		if err != nil {
 			assert.NoError(t, err, "error getting balance")
 		}
@@ -181,7 +177,7 @@ func createTransactions(t *testing.T, ctx context.Context, db db.Database, userI
 		Amount:        float32(amount),
 		TransactionId: uuid.New(),
 	}
-	err := db.DoOperation(ctx, &dop)
+	_, err := db.ApplyTransaction(ctx, &dop)
 	require.NoError(t, err)
 
 	for i := 1; i <= numbTrans; i++ {
@@ -189,7 +185,7 @@ func createTransactions(t *testing.T, ctx context.Context, db db.Database, userI
 		dop.Amount = float32(i)
 		dop.Amount = dop.GetAmount()
 		dop.TransactionId = uuid.New()
-		err = db.DoOperation(ctx, &dop)
+		_, err = db.ApplyTransaction(ctx, &dop)
 		require.NoError(t, err)
 	}
 }

@@ -9,26 +9,29 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/caledfwlch1/enlabtest/types"
+	"github.com/google/uuid"
+
 	"github.com/caledfwlch1/enlabtest/db/postgres"
 )
 
-func newServer(conf *Config) (*Server, error) {
-	db, err := postgres.NewDatabase(conf.Host, conf.User, conf.Pass, conf.Database, conf.Options)
+func newServer(conf *Config, f func()) (*server, error) {
+	db, err := postgres.NewDatabase(conf.ConnStr)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Server{
+	return &server{
 		db:   db,
-		stop: make(chan struct{}),
+		stop: f,
 	}, nil
 }
 
-func Load(conf *Config) error {
-	_, cancel := context.WithCancel(context.Background())
+func ListenAndServe(conf *Config) error {
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	serv, err := newServer(conf)
+	serv, err := newServer(conf, cancel)
 	if err != nil {
 		return err
 	}
@@ -41,26 +44,24 @@ func Load(conf *Config) error {
 
 	go func() {
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			cancel()
 			log.Fatalf("listen: %s\n", err)
 		}
 	}()
 
-	go func() {
-		serv.Scheduler()
-	}()
+	go serv.scheduler(ctx)
 
 	log.Println("Server started")
 
-	return shutdownServer(httpSrv, cancel, serv.stop)
+	return shutdownServer(httpSrv, cancel)
 }
 
-func shutdownServer(srv *http.Server, cancel context.CancelFunc, stop chan struct{}) error {
+func shutdownServer(srv *http.Server, cancel context.CancelFunc) error {
 	quit := make(chan os.Signal)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	log.Println("Shutdown Server ...")
-	close(stop)
 	cancel()
 
 	ctxTimeout, cancelTimeout := context.WithTimeout(context.Background(), timeoutServerShutdown)
@@ -74,13 +75,63 @@ func shutdownServer(srv *http.Server, cancel context.CancelFunc, stop chan struc
 	return nil
 }
 
-func validateRequest(request *http.Request) error {
+func validateRequest(rw http.ResponseWriter, request *http.Request) bool {
 	if request.Method != http.MethodPost {
-		return fmt.Errorf("bad method")
+		rw.WriteHeader(http.StatusMethodNotAllowed)
+		return false
 	}
 
 	if request.Body == http.NoBody {
-		return fmt.Errorf("empty request")
+		rw.WriteHeader(http.StatusBadRequest)
+		return false
 	}
-	return nil
+	return true
+}
+
+func validateHeaders(rw http.ResponseWriter, request *http.Request, userId *uuid.UUID, srcType *string) bool {
+	user := request.Header["User-Id"]
+	if len(user) == 0 {
+		rw.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprintln(rw, "empty User-Id")
+		return false
+	}
+
+	var err error
+	*userId, err = uuid.Parse(user[0])
+	if err != nil {
+		rw.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprintln(rw, err)
+		return false
+	}
+
+	srcTypes := request.Header["Source-Type"]
+	if len(srcTypes) == 0 {
+		rw.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprintln(rw, "empty Source-Type")
+		return false
+	}
+
+	if srcTypes[0] != "game" &&
+		srcTypes[0] != "server" &&
+		srcTypes[0] != "payment" {
+		rw.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprintln(rw, "bad Source-Type")
+		return false
+	}
+
+	*srcType = srcTypes[0]
+	return true
+}
+
+func jsonRequest(rw http.ResponseWriter, request *http.Request, data *types.DataOperation, userId uuid.UUID) bool {
+	data, err := types.ParseBody(request)
+	if err != nil {
+		rw.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprintln(rw, err)
+		return false
+	}
+	_ = request.Body.Close()
+
+	data.UserId = userId
+	return true
 }

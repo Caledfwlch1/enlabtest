@@ -9,6 +9,11 @@ DECLARE
 BEGIN
 	BEGIN
 		SELECT INTO balance_before balance FROM "user" WHERE user_id = id_user;
+
+		IF balance_before + amount < 0 THEN
+			RAISE 'check_violation';
+		END IF;
+
 		INSERT INTO "transaction" (transaction_id, state, amount, user_id) VALUES (trans, state, amount, id_user);
 		UPDATE "user" SET balance = balance + amount WHERE user_id = id_user;
 		SELECT INTO balance_after balance FROM "user" WHERE user_id = id_user;
@@ -32,6 +37,11 @@ DECLARE
 BEGIN
 	BEGIN
 		SELECT INTO balance_before balance FROM "user" WHERE user_id = id_user;
+
+		IF balance_before + amount < 0 THEN
+			RAISE 'check_violation';
+		END IF;
+
 		DELETE FROM "transaction" WHERE transaction_id = trans;
 		UPDATE "user" SET balance = balance + amount WHERE user_id = id_user;
 		SELECT INTO balance_after balance FROM "user" WHERE user_id = id_user;

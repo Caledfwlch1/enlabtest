@@ -5,27 +5,18 @@ import (
 	"io/ioutil"
 	"log"
 
-	"github.com/caledfwlch1/enlabtest/tools"
 	"gopkg.in/yaml.v2"
 )
 
-func NewConfig(ip, port, host, user, pass, database, options string, save bool) (*Config, error) {
+func NewConfig(ip, port, connStr string) (*Config, error) {
 	conf, err := readConfigFromFile()
 	if err != nil {
 		return nil, err
 	}
 
-	conf.Ip = tools.IIF(ip != "", ip, conf.Ip).(string)
-	conf.Port = tools.IIF(port != "", port, conf.Port).(string)
-	conf.Host = tools.IIF(host != "", host, conf.Host).(string)
-	conf.User = tools.IIF(user != "", user, conf.User).(string)
-	conf.Pass = tools.IIF(pass != "", pass, conf.Pass).(string)
-	conf.Database = tools.IIF(database != "", database, conf.Database).(string)
-	conf.Options = tools.IIF(options != "", options, conf.Options).(string)
-
-	if save {
-		saveConfigToFile(conf)
-	}
+	conf.Ip = ifString(ip != "", ip, conf.Ip)
+	conf.Port = ifString(port != "", port, conf.Port)
+	conf.ConnStr = ifString(connStr != "", connStr, conf.ConnStr)
 
 	return conf, nil
 }
@@ -55,4 +46,11 @@ func saveConfigToFile(conf *Config) {
 	if err != nil {
 		log.Println("error writing to configuration file")
 	}
+}
+
+func ifString(cond bool, outTrue, outFalse string) string {
+	if cond {
+		return outTrue
+	}
+	return outFalse
 }

@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/caledfwlch1/enlabtest/tools"
-
 	"github.com/google/uuid"
 
 	"github.com/caledfwlch1/enlabtest/types"
@@ -20,9 +18,7 @@ type postgres struct {
 	db *sql.DB
 }
 
-func NewDatabase(host, user, password, dbName, options string) (db.Database, error) {
-	connStr := fmt.Sprintf("postgres://%s:%s@%s/%s?%s", user, password, host, dbName, options)
-
+func NewDatabase(connStr string) (db.Database, error) {
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("error open database %s", err)
@@ -32,13 +28,14 @@ func NewDatabase(host, user, password, dbName, options string) (db.Database, err
 
 	err = out.makeStoredProc()
 	if err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("error creating storage procedure: %s", err)
 	}
 
 	return &out, nil
 }
 
-func (p *postgres) DoOperation(ctx context.Context, d *types.DataOperation) error {
+func (p *postgres) ApplyTransaction(ctx context.Context, d *types.DataOperation) (float32, error) {
 	query := "SELECT * FROM update_user_balance($1, $2, $3, $4)"
 
 	row := p.db.QueryRowContext(ctx, query, d.TransactionId, d.State, d.GetAmount(), d.UserId)
@@ -46,13 +43,13 @@ func (p *postgres) DoOperation(ctx context.Context, d *types.DataOperation) erro
 	var result float32
 	err := row.Scan(&result)
 	if err != nil {
-		return err
+		return -1, err
 	}
 	if result < 0 {
-		return fmt.Errorf("user balance cannot be negative")
+		return result, fmt.Errorf("user balance cannot be negative")
 	}
 
-	return nil
+	return result, nil
 }
 
 func (p *postgres) makeStoredProc() error {
@@ -63,7 +60,7 @@ func (p *postgres) makeStoredProc() error {
 	return nil
 }
 
-func (p *postgres) GetBalance(ctx context.Context, userId *uuid.UUID) (float32, error) {
+func (p *postgres) GetBalance(ctx context.Context, userId uuid.UUID) (float32, error) {
 	query := `SELECT balance FROM "user" WHERE user_id = $1`
 
 	row := p.db.QueryRowContext(ctx, query, userId)
@@ -77,23 +74,23 @@ func (p *postgres) GetBalance(ctx context.Context, userId *uuid.UUID) (float32, 
 	return balance, nil
 }
 
-func (p *postgres) CreateUser(ctx context.Context) (*uuid.UUID, error) {
+func (p *postgres) CreateUser(ctx context.Context) (uuid.UUID, error) {
 	userId := uuid.New()
 
 	query := `INSERT INTO "user" (user_id) VALUES ($1);`
 
 	res, err := p.db.ExecContext(ctx, query, userId)
 	if err != nil {
-		return nil, err
+		return uuid.UUID{}, err
 	}
 	rows, err := res.RowsAffected()
 	if err != nil {
-		return nil, err
+		return uuid.UUID{}, err
 	}
 	if rows != 1 {
-		return nil, fmt.Errorf("expected to affect 1 row, affected %d", rows)
+		return uuid.UUID{}, fmt.Errorf("expected to affect 1 row, affected %d", rows)
 	}
-	return &userId, nil
+	return userId, nil
 }
 
 func (p *postgres) RollBackLastN(ctx context.Context, task *types.RollBackTask) error {
@@ -155,9 +152,14 @@ ORDER BY timestamp DESC LIMIT $1;`
 }
 
 func selectRecords(dops []*types.DataOperation, odd bool) []*types.DataOperation {
-	var out []*types.DataOperation
+	var (
+		out   []*types.DataOperation
+		start int
+	)
 
-	start := tools.IIF(odd, 0, 1).(int)
+	if !odd {
+		start = 1
+	}
 
 	for i := start; i < len(dops); i += 2 {
 		out = append(out, dops[i])
@@ -167,7 +169,7 @@ func selectRecords(dops []*types.DataOperation, odd bool) []*types.DataOperation
 
 func (p *postgres) RollBackTransaction(ctx context.Context, dop *types.DataOperation) error {
 	query := `select * from rollback_transaction($1, $2, $3);`
-	row := p.db.QueryRowContext(ctx, query, dop.TransactionId, dop.GetInvertAmount(), dop.UserId)
+	row := p.db.QueryRowContext(ctx, query, dop.TransactionId, -dop.GetAmount(), dop.UserId)
 
 	var bal float32
 	err := row.Scan(&bal)

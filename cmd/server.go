@@ -10,24 +10,18 @@ import (
 var (
 	srvIp   = flag.String("i", server.DefaultIpAddr, "listen on address")
 	srvPort = flag.String("p", server.DefaultPort, "listen on port")
-	dbHost  = flag.String("h", "", "database host")
-	dbUser  = flag.String("u", "", "database user")
-	dbPass  = flag.String("w", "", "database password")
-	dbName  = flag.String("n", "", "database name")
-	dbOpt   = flag.String("o", "", "database connect options")
-	save    = flag.Bool("s", false, "save config")
+	connStr = flag.String("c", "", "database connection string")
 )
 
 func main() {
 	flag.Parse()
-	conf, err := server.NewConfig(*srvIp, *srvPort, *dbHost, *dbUser, *dbPass, *dbName, *dbOpt, *save)
+	conf, err := server.NewConfig(*srvIp, *srvPort, *connStr)
 	if err != nil {
-		log.Println(err)
-		return
+		log.Fatalln(err)
 	}
 
-	err = server.Load(conf)
+	err = server.ListenAndServe(conf)
 	if err != nil {
-		log.Println(err)
+		log.Fatalln(err)
 	}
 }

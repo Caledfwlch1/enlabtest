@@ -15,13 +15,9 @@ import (
 )
 
 type Config struct {
-	Ip       string
-	Port     string
-	Host     string
-	User     string
-	Pass     string
-	Database string
-	Options  string
+	Ip      string
+	Port    string
+	ConnStr string
 }
 
 func (s *Config) FullAddress() string {
@@ -32,83 +28,65 @@ func (s Config) String() string {
 	return s.Ip + ":" + s.Port
 }
 
-type Server struct {
+type server struct {
 	db   db.Database
-	stop chan struct{}
+	stop func()
 }
 
-func (s *Server) requestHandler(rw http.ResponseWriter, request *http.Request) {
-	if err := validateRequest(request); err != nil {
-		_, _ = fmt.Fprintln(rw, err)
+func (s *server) requestHandler(rw http.ResponseWriter, request *http.Request) {
+	if !validateRequest(rw, request) {
+		return
+	}
+
+	var (
+		userId  uuid.UUID
+		srcType string
+	)
+
+	if !validateHeaders(rw, request, &userId, &srcType) {
+		return
+	}
+
+	var data types.DataOperation
+	if !jsonRequest(rw, request, &data, userId) {
 		return
 	}
 
 	ctx := request.Context()
+	var (
+		balance float32
+		err     error
+	)
 
-	data, err := types.ParseBody(request)
-	if err != nil {
-		_, _ = fmt.Fprintln(rw, err)
-		return
-	}
-	_ = request.Body.Close()
-
-	user := request.Header["User-Id"]
-	if len(user) == 0 {
-		_, _ = fmt.Fprintln(rw, "empty User-Id")
-		return
-	}
-	userId, err := uuid.Parse(user[0])
-	if err != nil {
-		_, _ = fmt.Fprintln(rw, err)
-		return
-	}
-	data.UserId = userId
-
-	srcType := request.Header["Source-Type"]
-	if len(srcType) == 0 {
-		_, _ = fmt.Fprintln(rw, "empty Source-Type")
-		return
-	}
-
-	var resp string
-
-	switch srcType[0] {
+	switch srcType {
 	case "game":
-		resp = handlers.Game(ctx, s.db, data)
+		balance, err = handlers.Game(ctx, s.db, &data)
 	case "server":
-		resp = handlers.Server(ctx, s.db, data)
+		balance, err = handlers.Server(ctx, s.db, &data)
 	case "payment":
-		resp = handlers.Payment(ctx, s.db, data)
+		balance, err = handlers.Payment(ctx, s.db, &data)
 	default:
-		resp = "unknown Source-Type"
+		err = types.ErrorUnknownSourceType
 	}
 
-	_, _ = fmt.Fprintln(rw, resp)
+	if err != nil {
+		rw.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprintln(rw, err)
+		return
+	}
+	_, _ = fmt.Fprintln(rw, balance)
 }
 
-func (s *Server) Scheduler() {
-	ctx := context.Background()
+func (s *server) scheduler(ctx context.Context) {
+	ticker := time.NewTicker(postProcessingRollBackTimeout)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
 
-	go func() {
-		<-s.stop
-		ctx.Done()
-	}()
-
-	// RollBack task
-	go func() {
-		ticker := time.NewTicker(postProcessingRollBackTimeout)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-s.stop:
-				return
-
-			case <-ticker.C:
-				handlers.RollBack(ctx, s.db)
-			}
+		case <-ticker.C:
+			handlers.RollBack(ctx, s.db)
 		}
-	}()
-
-	// we can add more tasks here
-	<-s.stop
+	}
 }

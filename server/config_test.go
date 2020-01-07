@@ -12,26 +12,17 @@ import (
 )
 
 type args struct {
-	ip       string
-	port     string
-	host     string
-	user     string
-	pass     string
-	database string
-	options  string
-	save     bool
+	ip      string
+	port    string
+	connstr string
 }
 
 func TestNewConfig(t *testing.T) {
 
 	defaultConfig := Config{
-		Ip:       DefaultIpAddr,
-		Port:     DefaultPort,
-		Host:     "127.0.0.1",
-		User:     "docker",
-		Pass:     "docker",
-		Database: "test",
-		Options:  "sslmode=disable",
+		Ip:      DefaultIpAddr,
+		Port:    DefaultPort,
+		ConnStr: "postgres://127.0.0.1:docker@docker/test?sslmode=disable:",
 	}
 
 	tests := []struct {
@@ -44,7 +35,7 @@ func TestNewConfig(t *testing.T) {
 	}{
 		{
 			name:       "read from file",
-			args:       newArgs(defaultConfig, true),
+			args:       newArgs(defaultConfig),
 			want:       &defaultConfig,
 			createFile: true,
 		},
@@ -56,7 +47,7 @@ func TestNewConfig(t *testing.T) {
 				require.NoError(t, err, "error creating config file")
 			}
 
-			got, err := NewConfig(tt.args.ip, tt.args.port, tt.args.host, tt.args.user, tt.args.pass, tt.args.database, tt.args.options, tt.args.save)
+			got, err := NewConfig(tt.args.ip, tt.args.port, tt.args.connstr)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewConfig() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -85,15 +76,10 @@ func createConfigFile(conf *Config) error {
 	return ioutil.WriteFile(configFileName, b, 0666)
 }
 
-func newArgs(conf Config, save bool) args {
+func newArgs(conf Config) args {
 	return args{
-		ip:       conf.Ip,
-		port:     conf.Port,
-		host:     conf.Host,
-		user:     conf.User,
-		pass:     conf.Pass,
-		database: conf.Database,
-		options:  conf.Options,
-		save:     save,
+		ip:      conf.Ip,
+		port:    conf.Port,
+		connstr: conf.ConnStr,
 	}
 }
