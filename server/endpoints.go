@@ -18,7 +18,10 @@ func newServer(conf *Config) (*Server, error) {
 		return nil, err
 	}
 
-	return &Server{db: db}, nil
+	return &Server{
+		db:   db,
+		stop: make(chan struct{}),
+	}, nil
 }
 
 func Load(conf *Config) error {
@@ -42,17 +45,22 @@ func Load(conf *Config) error {
 		}
 	}()
 
+	go func() {
+		serv.Scheduler()
+	}()
+
 	log.Println("Server started")
 
-	return shutdownServer(httpSrv, cancel)
+	return shutdownServer(httpSrv, cancel, serv.stop)
 }
 
-func shutdownServer(srv *http.Server, cancel context.CancelFunc) error {
+func shutdownServer(srv *http.Server, cancel context.CancelFunc, stop chan struct{}) error {
 	quit := make(chan os.Signal)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	log.Println("Shutdown Server ...")
+	close(stop)
 	cancel()
 
 	ctxTimeout, cancelTimeout := context.WithTimeout(context.Background(), timeoutServerShutdown)

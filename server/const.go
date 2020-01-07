@@ -7,4 +7,6 @@ const (
 	DefaultIpAddr         = ""
 	DefaultPort           = "8080"
 	timeoutServerShutdown = time.Minute
+
+	postProcessingRollBackTimeout = time.Minute
 )
