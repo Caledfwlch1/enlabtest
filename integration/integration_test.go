@@ -1,4 +1,4 @@
-package main
+package integration
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"testing"
 
 	"github.com/caledfwlch1/enlabtest/types"
 	"github.com/google/uuid"
@@ -24,7 +25,7 @@ type client struct {
 	srcType string
 }
 
-func main() {
+func TestIntegration(t *testing.T) {
 
 	userID := "419032e5-d2b4-4711-b83d-77e0aed0e832"
 	srcType := "game"
@@ -37,17 +38,17 @@ func main() {
 
 	balance, err := cln.init(begBalance)
 	if err != nil {
-		log.Fatalln("init: ", err)
+		t.Fatal("init: ", err)
 	}
 
-	log.Printf("balance: %f\n", balance)
+	t.Logf("balance: %f", balance)
 
 	for i := 0; i < 20; i++ {
 		balance, err = cln.updateBalance(balance, i)
 		if err != nil {
-			log.Fatalln(err)
+			t.Fatal(err)
 		}
-		log.Printf("balance: %f\n", balance)
+		t.Logf("balance: %f", balance)
 	}
 }
 
@@ -104,20 +105,14 @@ func processResponse(resp *http.Response) (float32, error) {
 		return 0, fmt.Errorf("status code: %d, error: %s", resp.StatusCode, b)
 	}
 
-	var (
-		bal    float32
-		errStr string
-	)
+	var bal struct{ Balance float32 }
+
 	err = json.Unmarshal(b, &bal)
 	if err != nil {
-		err = json.Unmarshal(b, &errStr)
-		if err != nil {
-			return 0, fmt.Errorf("unmarshal error: %s", err)
-		}
-		return 0, fmt.Errorf(errStr)
+		return 0, err
 	}
 
-	return float32(bal), nil
+	return bal.Balance, nil
 }
 
 func makeHttpPostRequest(srcType, userID string, i int) (*http.Request, float32, error) {

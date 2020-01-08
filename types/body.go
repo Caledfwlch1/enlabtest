@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strconv"
 
 	"github.com/google/uuid"
@@ -45,17 +44,6 @@ func (d *Transaction) GetAmount() float32 {
 
 func (o OperationState) String() string {
 	return StateToString[o]
-}
-
-func ParseBody(request *http.Request) (*Transaction, error) {
-	var data Transaction
-
-	err := json.NewDecoder(request.Body).Decode(&data)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing body data: %s", err)
-	}
-
-	return &data, nil
 }
 
 func (d *Transaction) UnmarshalJSON(b []byte) error {
