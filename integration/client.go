@@ -18,24 +18,32 @@ const (
 	connStr = "http://localhost:8080/request"
 )
 
+type client struct {
+	http    *http.Client
+	userID  string
+	srcType string
+}
+
 func main() {
 
 	userID := "419032e5-d2b4-4711-b83d-77e0aed0e832"
 	srcType := "game"
 	client := http.DefaultClient
 
+	cln := newClient(client, srcType, userID)
+
 	log.Printf("user: %s, srcType: %s\n", userID, srcType)
 	begBalance := 1000
 
-	balance, err := requestToServer(client, srcType, userID, 0, begBalance)
+	balance, err := cln.init(begBalance)
 	if err != nil {
-		log.Fatalln("set 1000", err)
+		log.Fatalln("init: ", err)
 	}
 
 	log.Printf("balance: %f\n", balance)
 
 	for i := 0; i < 20; i++ {
-		balance, err = requestToServer(client, srcType, userID, balance, i)
+		balance, err = cln.updateBalance(balance, i)
 		if err != nil {
 			log.Fatalln(err)
 		}
@@ -43,13 +51,29 @@ func main() {
 	}
 }
 
-func requestToServer(client *http.Client, srcType, userID string, balance float32, i int) (float32, error) {
-	req, delta, err := makeHttpPostRequest(srcType, userID, i)
+func newClient(clnt *http.Client, srcType, userID string) *client {
+	return &client{
+		http:    clnt,
+		userID:  userID,
+		srcType: srcType,
+	}
+}
+
+func (c *client) init(bal int) (float32, error) {
+	return c.requestToServer(0, bal)
+}
+
+func (c *client) updateBalance(balance float32, i int) (float32, error) {
+	return c.requestToServer(balance, i)
+}
+
+func (c *client) requestToServer(balance float32, i int) (float32, error) {
+	req, delta, err := makeHttpPostRequest(c.srcType, c.userID, i)
 	if err != nil {
 		return 0, err
 	}
 
-	resp, err := client.Do(req)
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return 0, err
 	}

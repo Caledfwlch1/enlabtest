@@ -119,7 +119,7 @@ func Test_postgres_RollBackLastN(t *testing.T) {
 
 type rollBackTestData struct {
 	userBalance  map[uuid.UUID]balance
-	transactions []*types.Transaction
+	transactions []types.Transaction
 }
 
 type balance struct {

@@ -14,5 +14,5 @@ type Database interface {
 	GetBalance(ctx context.Context, userId uuid.UUID) (float32, error)
 	RollBackLastN(ctx context.Context, task *types.RollBackTask) error
 	RollBackTransaction(ctx context.Context, td *types.Transaction) error
-	GetLastRecords(ctx context.Context, n int) ([]*types.Transaction, error)
+	GetLastRecords(ctx context.Context, n int) ([]types.Transaction, error)
 }

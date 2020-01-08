@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -51,9 +50,11 @@ func (s *server) requestHandler(rw http.ResponseWriter, request *http.Request) {
 	}
 
 	var data types.Transaction
-	if !jsonRequest(rw, request, &data, userId) {
+	if !jsonRequest(rw, request, &data) {
 		return
 	}
+
+	data.UserID = userId
 
 	ctx := request.Context()
 	var (
@@ -72,15 +73,13 @@ func (s *server) requestHandler(rw http.ResponseWriter, request *http.Request) {
 		err = types.ErrorUnknownSourceType
 	}
 
-	var out []byte
 	if err != nil {
-		rw.WriteHeader(http.StatusBadRequest)
-		strErr := err.Error()
-		out, _ = json.Marshal(strErr)
-	} else {
-		out, _ = json.Marshal(balance)
+		jsonError(rw, err, http.StatusBadRequest)
+		return
 	}
-	_, _ = fmt.Fprintln(rw, string(out))
+	_ = json.NewEncoder(rw).Encode(struct {
+		Balance float32
+	}{Balance: balance})
 }
 
 func (s *server) scheduler(ctx context.Context) {

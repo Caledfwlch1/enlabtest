@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -9,7 +10,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/caledfwlch1/enlabtest/types"
 	"github.com/google/uuid"
 
 	"github.com/caledfwlch1/enlabtest/db/postgres"
@@ -42,11 +42,10 @@ func ListenAndServe(conf *Config) error {
 		Addr: conf.FullAddress(),
 	}
 
-	stop := make(chan struct{}, 1)
+	stop := make(chan error, 1)
 	go func() {
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			stop <- struct{}{}
-			log.Printf("listen: %s\n", err)
+			stop <- err
 		}
 	}()
 
@@ -57,12 +56,14 @@ func ListenAndServe(conf *Config) error {
 	return shutdownServer(httpSrv, cancel, stop)
 }
 
-func shutdownServer(srv *http.Server, cancel context.CancelFunc, stop chan struct{}) error {
+func shutdownServer(srv *http.Server, cancel context.CancelFunc, stop <-chan error) error {
 	quit := make(chan os.Signal)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	select {
-	case <-stop:
+	case err := <-stop:
+		cancel()
+		return fmt.Errorf("listen: %v\n", err)
 	case <-quit:
 	}
 
@@ -82,62 +83,56 @@ func shutdownServer(srv *http.Server, cancel context.CancelFunc, stop chan struc
 
 func validateRequest(rw http.ResponseWriter, request *http.Request) bool {
 	if request.Method != http.MethodPost {
-		rw.WriteHeader(http.StatusMethodNotAllowed)
+		jsonError(rw, fmt.Errorf("bad method"), http.StatusBadRequest)
 		return false
 	}
 
 	if request.Body == http.NoBody {
-		rw.WriteHeader(http.StatusBadRequest)
+		jsonError(rw, fmt.Errorf("body is empty"), http.StatusBadRequest)
 		return false
 	}
 	return true
 }
 
 func validateHeaders(rw http.ResponseWriter, request *http.Request, userId *uuid.UUID, srcType *string) bool {
-	user := request.Header["User-Id"]
-	if len(user) == 0 {
-		rw.WriteHeader(http.StatusBadRequest)
-		_, _ = fmt.Fprintln(rw, "empty User-Id")
-		return false
-	}
+	user := request.Header.Get("User-Id")
 
 	var err error
-	*userId, err = uuid.Parse(user[0])
+	*userId, err = uuid.Parse(user)
 	if err != nil {
-		rw.WriteHeader(http.StatusBadRequest)
-		_, _ = fmt.Fprintln(rw, err)
+		jsonError(rw, err, http.StatusBadRequest)
 		return false
 	}
 
-	srcTypes := request.Header["Source-Type"]
-	if len(srcTypes) == 0 {
-		rw.WriteHeader(http.StatusBadRequest)
-		_, _ = fmt.Fprintln(rw, "empty Source-Type")
+	srcTypes := request.Header.Get("Source-Type")
+
+	if srcTypes != "game" &&
+		srcTypes != "server" &&
+		srcTypes != "payment" {
+
+		jsonError(rw, fmt.Errorf("bad Source-Type"), http.StatusBadRequest)
 		return false
 	}
 
-	if srcTypes[0] != "game" &&
-		srcTypes[0] != "server" &&
-		srcTypes[0] != "payment" {
-		rw.WriteHeader(http.StatusBadRequest)
-		_, _ = fmt.Fprintln(rw, "bad Source-Type")
-		return false
-	}
-
-	*srcType = srcTypes[0]
+	*srcType = srcTypes
 	return true
 }
 
-func jsonRequest(rw http.ResponseWriter, request *http.Request, data *types.Transaction, userId uuid.UUID) bool {
-	d, err := types.ParseBody(request)
+func jsonRequest(rw http.ResponseWriter, req *http.Request, data interface{}) bool {
+	defer req.Body.Close()
+
+	err := json.NewDecoder(req.Body).Decode(data)
 	if err != nil {
-		rw.WriteHeader(http.StatusBadRequest)
-		_, _ = fmt.Fprintln(rw, err)
+		jsonError(rw, fmt.Errorf("error parsing body data: %s", err), http.StatusBadRequest)
 		return false
 	}
-	_ = request.Body.Close()
-
-	*data = *d
-	data.UserID = userId
 	return true
+}
+
+func jsonError(rw http.ResponseWriter, err error, statusCode int) {
+	rw.WriteHeader(statusCode)
+	enc := json.NewEncoder(rw)
+	_ = enc.Encode(struct {
+		Err string
+	}{Err: err.Error()})
 }

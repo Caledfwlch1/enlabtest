@@ -101,7 +101,7 @@ func (p *postgres) RollBackLastN(ctx context.Context, task *types.RollBackTask) 
 	dops = selectRecords(dops, task.Odd)
 
 	for _, dop := range dops {
-		err = p.RollBackTransaction(ctx, dop)
+		err = p.RollBackTransaction(ctx, &dop)
 		if err != nil {
 			log.Printf("error transaction roll back, transaction Id: %s, error: %s",
 				dop.ID, err)
@@ -117,7 +117,7 @@ func (p *postgres) RollBackLastN(ctx context.Context, task *types.RollBackTask) 
 	return nil
 }
 
-func (p *postgres) GetLastRecords(ctx context.Context, n int) ([]*types.Transaction, error) {
+func (p *postgres) GetLastRecords(ctx context.Context, n int) ([]types.Transaction, error) {
 	query := `SELECT transaction_id, state, amount, user_id FROM transaction 
 ORDER BY timestamp DESC LIMIT $1;`
 
@@ -126,20 +126,21 @@ ORDER BY timestamp DESC LIMIT $1;`
 		return nil, err
 	}
 
-	var (
-		out           []*types.Transaction
-		transactionId uuid.UUID
-		state         int
-		amount        float32
-		userId        uuid.UUID
-	)
+	var out []types.Transaction
 
 	for rows.Next() {
+		var (
+			transactionId uuid.UUID
+			state         int
+			amount        float32
+			userId        uuid.UUID
+		)
+
 		if err := rows.Scan(&transactionId, &state, &amount, &userId); err != nil {
 			continue
 		}
 
-		out = append(out, &types.Transaction{
+		out = append(out, types.Transaction{
 			ID:     transactionId,
 			State:  types.OperationState(state),
 			Amount: amount,
@@ -150,9 +151,9 @@ ORDER BY timestamp DESC LIMIT $1;`
 	return out, nil
 }
 
-func selectRecords(dops []*types.Transaction, odd bool) []*types.Transaction {
+func selectRecords(dops []types.Transaction, odd bool) []types.Transaction {
 	var (
-		out   []*types.Transaction
+		out   []types.Transaction
 		start int
 	)
 
