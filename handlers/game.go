@@ -8,7 +8,7 @@ import (
 	"github.com/caledfwlch1/enlabtest/types"
 )
 
-func Game(ctx context.Context, db db.Database, data *types.DataOperation) (float32, error) {
+func Game(ctx context.Context, db db.Database, data *types.Transaction) (float32, error) {
 	if data.State != types.Win && data.State != types.Lost {
 		return -1, types.ErrorUnknownState
 	}

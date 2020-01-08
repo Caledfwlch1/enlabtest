@@ -42,10 +42,11 @@ func ListenAndServe(conf *Config) error {
 		Addr: conf.FullAddress(),
 	}
 
+	stop := make(chan struct{}, 1)
 	go func() {
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			cancel()
-			log.Fatalf("listen: %s\n", err)
+			stop <- struct{}{}
+			log.Printf("listen: %s\n", err)
 		}
 	}()
 
@@ -53,13 +54,17 @@ func ListenAndServe(conf *Config) error {
 
 	log.Println("Server started")
 
-	return shutdownServer(httpSrv, cancel)
+	return shutdownServer(httpSrv, cancel, stop)
 }
 
-func shutdownServer(srv *http.Server, cancel context.CancelFunc) error {
+func shutdownServer(srv *http.Server, cancel context.CancelFunc, stop chan struct{}) error {
 	quit := make(chan os.Signal)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+
+	select {
+	case <-stop:
+	case <-quit:
+	}
 
 	log.Println("Shutdown Server ...")
 	cancel()
@@ -123,8 +128,8 @@ func validateHeaders(rw http.ResponseWriter, request *http.Request, userId *uuid
 	return true
 }
 
-func jsonRequest(rw http.ResponseWriter, request *http.Request, data *types.DataOperation, userId uuid.UUID) bool {
-	data, err := types.ParseBody(request)
+func jsonRequest(rw http.ResponseWriter, request *http.Request, data *types.Transaction, userId uuid.UUID) bool {
+	d, err := types.ParseBody(request)
 	if err != nil {
 		rw.WriteHeader(http.StatusBadRequest)
 		_, _ = fmt.Fprintln(rw, err)
@@ -132,6 +137,7 @@ func jsonRequest(rw http.ResponseWriter, request *http.Request, data *types.Data
 	}
 	_ = request.Body.Close()
 
-	data.UserId = userId
+	*data = *d
+	data.UserID = userId
 	return true
 }

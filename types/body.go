@@ -18,25 +18,25 @@ type UserRequest struct {
 
 // for more accurate money operations,
 // there is an option to save the “Amount” field as an integer value
-type DataOperation struct {
-	UserId        uuid.UUID `json:"-"`
-	State         OperationState
-	Amount        float32
-	TransactionId uuid.UUID
+type Transaction struct {
+	UserID uuid.UUID `json:"-"`
+	State  OperationState
+	Amount float32
+	ID     uuid.UUID
 }
 
 type OperationState int
 
-func NewDataOperation(userId uuid.UUID, state OperationState, amount float32) *DataOperation {
-	return &DataOperation{
-		UserId:        userId,
-		State:         state,
-		Amount:        amount,
-		TransactionId: uuid.New(),
+func NewDataOperation(userId uuid.UUID, state OperationState, amount float32) *Transaction {
+	return &Transaction{
+		UserID: userId,
+		State:  state,
+		Amount: amount,
+		ID:     uuid.New(),
 	}
 }
 
-func (d *DataOperation) GetAmount() float32 {
+func (d *Transaction) GetAmount() float32 {
 	if d.State == Lost {
 		return -d.Amount
 	}
@@ -47,8 +47,8 @@ func (o OperationState) String() string {
 	return StateToString[o]
 }
 
-func ParseBody(request *http.Request) (*DataOperation, error) {
-	var data DataOperation
+func ParseBody(request *http.Request) (*Transaction, error) {
+	var data Transaction
 
 	err := json.NewDecoder(request.Body).Decode(&data)
 	if err != nil {
@@ -58,7 +58,7 @@ func ParseBody(request *http.Request) (*DataOperation, error) {
 	return &data, nil
 }
 
-func (d *DataOperation) UnmarshalJSON(b []byte) error {
+func (d *Transaction) UnmarshalJSON(b []byte) error {
 	var data UserRequest
 
 	err := json.NewDecoder(bytes.NewReader(b)).Decode(&data)
@@ -70,7 +70,7 @@ func (d *DataOperation) UnmarshalJSON(b []byte) error {
 	if err != nil {
 		return fmt.Errorf("error unmarshaling transactionId field: %s", err)
 	}
-	d.TransactionId = id
+	d.ID = id
 
 	switch data.State {
 	case "win":
@@ -89,7 +89,7 @@ func (d *DataOperation) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func (d DataOperation) String() string {
+func (d Transaction) String() string {
 	return fmt.Sprintf("userid:%s, state:%s, amount:%.2f, transactionId:%s",
-		d.UserId, d.State, d.Amount, d.TransactionId)
+		d.UserID, d.State, d.Amount, d.ID)
 }

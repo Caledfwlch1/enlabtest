@@ -20,7 +20,7 @@ var (
 
 func Test_postgres_ApplyTransaction(t *testing.T) {
 	type args struct {
-		d *types.DataOperation
+		d *types.Transaction
 	}
 
 	p, err := NewDatabase(connStr)
@@ -66,7 +66,7 @@ func Test_postgres_ApplyTransaction(t *testing.T) {
 				t.Errorf("postgres.DoOperation() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
-			balance, err := p.GetBalance(ctx, tt.args.d.UserId)
+			balance, err := p.GetBalance(ctx, tt.args.d.UserID)
 			assert.NoError(t, err, "error getting balance")
 			assert.Equal(t, tt.wants, balance, "balance mismatch")
 
@@ -95,31 +95,31 @@ func Test_postgres_RollBackLastN(t *testing.T) {
 		},
 	}
 
-	db, err := NewDatabase(connStr)
+	dbs, err := NewDatabase(connStr)
 	require.NoError(t, err, "error open database")
 	ctx := context.Background()
 
-	userId, err := db.CreateUser(ctx)
+	userId, err := dbs.CreateUser(ctx)
 	require.NoError(t, err, "error creating user")
 
-	createTransactions(t, ctx, db, userId)
+	createTransactions(t, ctx, dbs, userId)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
-			rbd := prepareTestData(t, ctx, db, tt.args.task.Odd)
+			rbd := prepareTestData(t, ctx, dbs, tt.args.task.Odd)
 
-			if err := db.RollBackLastN(ctx, tt.args.task); (err != nil) != tt.wantErr {
+			if err := dbs.RollBackLastN(ctx, tt.args.task); (err != nil) != tt.wantErr {
 				t.Errorf("postgres.RollBackLastN() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			checkBalances(t, ctx, db, rbd)
+			checkBalances(t, ctx, dbs, rbd)
 		})
 	}
 }
 
 type rollBackTestData struct {
 	userBalance  map[uuid.UUID]balance
-	transactions []*types.DataOperation
+	transactions []*types.Transaction
 }
 
 type balance struct {
@@ -128,7 +128,7 @@ type balance struct {
 }
 
 func prepareTestData(t *testing.T, ctx context.Context, db db.Database, odd bool) *rollBackTestData {
-	dops, err := db.GetLastRecords(ctx, numbRecs)
+	dops, err := db.GetLastRecords(ctx, numbRecs*2)
 	require.NoError(t, err, "error getting last records")
 	dops = selectRecords(dops, odd)
 
@@ -138,9 +138,9 @@ func prepareTestData(t *testing.T, ctx context.Context, db db.Database, odd bool
 	}
 
 	for _, dop := range dops {
-		b := out.userBalance[dop.UserId]
+		b := out.userBalance[dop.UserID]
 		b.delta += dop.GetAmount()
-		out.userBalance[dop.UserId] = b
+		out.userBalance[dop.UserID] = b
 	}
 
 	for u := range out.userBalance {
@@ -171,11 +171,11 @@ func createTransactions(t *testing.T, ctx context.Context, db db.Database, userI
 	numbTrans := numbRecs * 3
 	amount := numbTrans*numbTrans/2 + numbTrans
 
-	dop := types.DataOperation{
-		UserId:        userId,
-		State:         types.Win,
-		Amount:        float32(amount),
-		TransactionId: uuid.New(),
+	dop := types.Transaction{
+		UserID: userId,
+		State:  types.Win,
+		Amount: float32(amount),
+		ID:     uuid.New(),
 	}
 	_, err := db.ApplyTransaction(ctx, &dop)
 	require.NoError(t, err)
@@ -184,7 +184,7 @@ func createTransactions(t *testing.T, ctx context.Context, db db.Database, userI
 		dop.State = types.OperationState(i%2) + 1
 		dop.Amount = float32(i)
 		dop.Amount = dop.GetAmount()
-		dop.TransactionId = uuid.New()
+		dop.ID = uuid.New()
 		_, err = db.ApplyTransaction(ctx, &dop)
 		require.NoError(t, err)
 	}
