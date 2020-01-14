@@ -9,7 +9,7 @@ import (
 )
 
 type Database interface {
-	CreateUser(ctx context.Context) (uuid.UUID, error)
+	CreateUser(ctx context.Context, userId uuid.UUID) (uuid.UUID, error)
 	ApplyTransaction(ctx context.Context, d *types.Transaction) (float32, error)
 	GetBalance(ctx context.Context, userId uuid.UUID) (float32, error)
 	RollBackLastN(ctx context.Context, task *types.RollBackTask) error

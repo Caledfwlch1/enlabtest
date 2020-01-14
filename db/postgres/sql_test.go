@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	connStr = "postgres://docker:docker@127.0.0.1/test?sslmode=disable"
+	connStr = "postgres://docker:docker@127.0.0.1/test1?sslmode=disable"
 )
 
 func Test_postgres_ApplyTransaction(t *testing.T) {
@@ -27,7 +27,7 @@ func Test_postgres_ApplyTransaction(t *testing.T) {
 	require.NoError(t, err, "error open database")
 	ctx := context.Background()
 
-	userId, err := p.CreateUser(ctx)
+	userId, err := p.CreateUser(ctx, uuid.New())
 	require.NoError(t, err, "error creating user")
 
 	tests := []struct {
@@ -99,7 +99,7 @@ func Test_postgres_RollBackLastN(t *testing.T) {
 	require.NoError(t, err, "error open database")
 	ctx := context.Background()
 
-	userId, err := dbs.CreateUser(ctx)
+	userId, err := dbs.CreateUser(ctx, uuid.New())
 	require.NoError(t, err, "error creating user")
 
 	createTransactions(t, ctx, dbs, userId)

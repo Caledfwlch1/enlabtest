@@ -54,7 +54,9 @@ func (p *postgres) ApplyTransaction(ctx context.Context, d *types.Transaction) (
 func (p *postgres) makeStoredProc() error {
 	for _, query := range storedProc {
 		_, err := p.db.Exec(query)
-		return err
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -73,9 +75,7 @@ func (p *postgres) GetBalance(ctx context.Context, userId uuid.UUID) (float32, e
 	return balance, nil
 }
 
-func (p *postgres) CreateUser(ctx context.Context) (uuid.UUID, error) {
-	userId := uuid.New()
-
+func (p *postgres) CreateUser(ctx context.Context, userId uuid.UUID) (uuid.UUID, error) {
 	query := `INSERT INTO "user" (user_id) VALUES ($1);`
 
 	res, err := p.db.ExecContext(ctx, query, userId)

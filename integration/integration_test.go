@@ -27,7 +27,7 @@ type client struct {
 
 func TestIntegration(t *testing.T) {
 
-	userID := "419032e5-d2b4-4711-b83d-77e0aed0e832"
+	userID := types.TestUser
 	srcType := "game"
 	client := http.DefaultClient
 
