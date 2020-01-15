@@ -10,6 +10,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/caledfwlch1/enlabtest/types"
+
 	"github.com/google/uuid"
 
 	"github.com/caledfwlch1/enlabtest/db/postgres"
@@ -135,4 +137,14 @@ func jsonError(rw http.ResponseWriter, err error, statusCode int) {
 	_ = enc.Encode(struct {
 		Err string
 	}{Err: err.Error()})
+}
+
+func validateData(rw http.ResponseWriter, data *types.Transaction) bool {
+	switch {
+	case data.Amount < 0:
+		jsonError(rw, fmt.Errorf("amount can not be negative: %.2f", data.Amount), http.StatusBadRequest)
+		return false
+	}
+
+	return true
 }

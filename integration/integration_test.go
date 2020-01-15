@@ -1,42 +1,45 @@
 package integration
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/caledfwlch1/enlabtest/client"
+	"github.com/caledfwlch1/enlabtest/server"
+	"gopkg.in/yaml.v2"
 
 	"github.com/caledfwlch1/enlabtest/types"
-	"github.com/google/uuid"
 )
 
 const (
-	connStr = "http://localhost:8080/request"
+	host           = "localhost"
+	port           = "8080"
+	connStr        = "http://" + host + ":" + port + "/request"
+	configFileName = "server.yml"
 )
 
-type client struct {
-	http    *http.Client
-	userID  string
-	srcType string
-}
-
 func TestIntegration(t *testing.T) {
+	go runServer()
+	// give time to load the server
+	time.Sleep(time.Second)
 
 	userID := types.TestUser
 	srcType := "game"
-	client := http.DefaultClient
+	httpClient := http.DefaultClient
 
-	cln := newClient(client, srcType, userID)
+	cln := client.NewClient(httpClient, connStr, srcType, userID)
 
 	log.Printf("user: %s, srcType: %s\n", userID, srcType)
 	begBalance := 1000
 
-	balance, err := cln.init(begBalance)
+	balance, err := initUserBalance(cln, begBalance)
 	if err != nil {
 		t.Fatal("init: ", err)
 	}
@@ -44,7 +47,8 @@ func TestIntegration(t *testing.T) {
 	t.Logf("balance: %f", balance)
 
 	for i := 0; i < 20; i++ {
-		balance, err = cln.updateBalance(balance, i)
+		state := types.OperationState(i%2 + 1)
+		balance, err = updateBalance(cln, balance, float32(i), state)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,102 +56,62 @@ func TestIntegration(t *testing.T) {
 	}
 }
 
-func newClient(clnt *http.Client, srcType, userID string) *client {
-	return &client{
-		http:    clnt,
-		userID:  userID,
-		srcType: srcType,
+func initUserBalance(c *client.AppClient, bal int) (float32, error) {
+	data := types.UserRequest{
+		State:         "win",
+		Amount:        strconv.FormatFloat(float64(bal), 'f', 2, 32),
+		TransactionId: uuid.New().String(),
 	}
+	return c.RequestToServer(&data)
 }
 
-func (c *client) init(bal int) (float32, error) {
-	return c.requestToServer(0, bal)
-}
-
-func (c *client) updateBalance(balance float32, i int) (float32, error) {
-	return c.requestToServer(balance, i)
-}
-
-func (c *client) requestToServer(balance float32, i int) (float32, error) {
-	req, delta, err := makeHttpPostRequest(c.srcType, c.userID, i)
-	if err != nil {
-		return 0, err
-	}
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return 0, err
-	}
-
-	bal, err := processResponse(resp)
-	if err != nil {
-		return 0, err
-	}
-
-	if delta+balance != bal {
-		return 0, fmt.Errorf("balance mismatch %f != %f", delta+balance, bal)
-	}
-
-	return bal, nil
-}
-
-func processResponse(resp *http.Response) (float32, error) {
-	if resp == nil {
-		return 0, fmt.Errorf("empty response")
-	}
-
-	b, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return 0, fmt.Errorf("read error: %s", err)
-	}
-
-	if resp.StatusCode/100 != 2 {
-		return 0, fmt.Errorf("status code: %d, error: %s", resp.StatusCode, b)
-	}
-
-	var bal struct{ Balance float32 }
-
-	err = json.Unmarshal(b, &bal)
-	if err != nil {
-		return 0, err
-	}
-
-	return bal.Balance, nil
-}
-
-func makeHttpPostRequest(srcType, userID string, i int) (*http.Request, float32, error) {
-	rd, bal, err := generateData(i)
-	if err != nil {
-		return nil, 0, fmt.Errorf("data generation error: %s", err)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, connStr, rd)
-	if err != nil {
-		return nil, 0, fmt.Errorf("request generation error: %s", err)
-	}
-
-	req.Header.Set("Source-Type", srcType)
-	req.Header.Set("User-Id", userID)
-
-	return req, bal, nil
-}
-
-func generateData(i int) (io.Reader, float32, error) {
-	state := types.OperationState(i%2 + 1)
-
+func updateBalance(c *client.AppClient, balance, delta float32, state types.OperationState) (float32, error) {
 	data := types.UserRequest{
 		State:         state.String(),
-		Amount:        strconv.FormatFloat(float64(i), 'f', 2, 32),
+		Amount:        strconv.FormatFloat(float64(delta), 'f', 2, 32),
 		TransactionId: uuid.New().String(),
 	}
 
-	b, err := json.Marshal(&data)
+	bal, err := c.RequestToServer(&data)
 	if err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 
-	if state == types.Lost {
-		return bytes.NewReader(b), float32(-i), nil
+	delta *= state.Factor()
+	if delta+balance != bal {
+		return 0, fmt.Errorf("balance mismatch %f != %f", delta+balance, bal)
 	}
-	return bytes.NewReader(b), float32(i), nil
+	return bal, nil
+}
+
+func runServer() {
+	saveConfigToFile(&server.Config{
+		Ip:      host,
+		Port:    port,
+		ConnStr: types.ServerConnStr,
+	})
+
+	conf, err := server.NewConfig(host, port, types.ServerConnStr)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	err = server.ListenAndServe(conf)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	return
+}
+
+func saveConfigToFile(conf *server.Config) {
+	b, err := yaml.Marshal(conf)
+	if err != nil {
+		log.Println("configuration data encoding error")
+		return
+	}
+
+	err = ioutil.WriteFile(configFileName, b, 0666)
+	if err != nil {
+		log.Println("error writing to configuration file")
+	}
 }

@@ -46,6 +46,16 @@ func (o OperationState) String() string {
 	return StateToString[o]
 }
 
+func (o OperationState) Factor() float32 {
+	switch o {
+	case Win:
+		return 1
+	case Lost:
+		return -1
+	}
+	return 0
+}
+
 func (d *Transaction) UnmarshalJSON(b []byte) error {
 	var data UserRequest
 
@@ -71,7 +81,7 @@ func (d *Transaction) UnmarshalJSON(b []byte) error {
 
 	amount, err := strconv.ParseFloat(data.Amount, 32)
 	if err != nil {
-		return fmt.Errorf("error parsing float value: %s", err)
+		return fmt.Errorf("error parsing amount field: %s", err)
 	}
 	d.Amount = float32(amount)
 	return nil

@@ -34,6 +34,12 @@ func main() {
 		log.Fatalln(err)
 	}
 
+	err = db.MakeStoredProc()
+	if err != nil {
+		_ = dbs.Close()
+		log.Fatalln(err)
+	}
+
 	ctx := context.Background()
 
 	userID, _ := uuid.Parse(types.TestUser)

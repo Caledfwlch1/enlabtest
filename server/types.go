@@ -54,6 +54,10 @@ func (s *server) requestHandler(rw http.ResponseWriter, request *http.Request) {
 		return
 	}
 
+	if !validateData(rw, &data) {
+		return
+	}
+
 	data.UserID = userId
 
 	ctx := request.Context()

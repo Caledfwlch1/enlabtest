@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
 
 	"gopkg.in/yaml.v2"
 )
@@ -33,19 +32,6 @@ func readConfigFromFile() (*Config, error) {
 	}
 
 	return &conf, nil
-}
-
-func saveConfigToFile(conf *Config) {
-	b, err := yaml.Marshal(conf)
-	if err != nil {
-		log.Println("configuration data encoding error")
-		return
-	}
-
-	err = ioutil.WriteFile(configFileName, b, 0x666)
-	if err != nil {
-		log.Println("error writing to configuration file")
-	}
 }
 
 func ifString(cond bool, outTrue, outFalse string) string {

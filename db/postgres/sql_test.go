@@ -14,16 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	connStr = "postgres://docker:docker@127.0.0.1/test1?sslmode=disable"
-)
-
 func Test_postgres_ApplyTransaction(t *testing.T) {
 	type args struct {
 		d *types.Transaction
 	}
 
-	p, err := NewDatabase(connStr)
+	p, err := NewDatabase(types.ServerConnStr)
 	require.NoError(t, err, "error open database")
 	ctx := context.Background()
 
@@ -31,10 +27,11 @@ func Test_postgres_ApplyTransaction(t *testing.T) {
 	require.NoError(t, err, "error creating user")
 
 	tests := []struct {
-		name    string
-		args    args
-		wants   float32
-		wantErr bool
+		name       string
+		args       args
+		wants      float32
+		wantAppErr bool
+		wantBalErr bool
 	}{
 		{
 			name:  "win200",
@@ -52,22 +49,33 @@ func Test_postgres_ApplyTransaction(t *testing.T) {
 			wants: 0,
 		},
 		{
-			name:    "lost-100",
-			args:    args{d: types.NewDataOperation(userId, types.Lost, 100)},
-			wants:   0,
-			wantErr: true,
+			name:       "lost-100",
+			args:       args{d: types.NewDataOperation(userId, types.Lost, 100)},
+			wants:      0,
+			wantAppErr: true,
+		},
+		{
+			name:       "user does not exist",
+			args:       args{d: types.NewDataOperation(uuid.New(), types.Win, 200)},
+			wants:      -1,
+			wantAppErr: true,
+			wantBalErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
-			if _, err := p.ApplyTransaction(ctx, tt.args.d); (err != nil) != tt.wantErr {
-				t.Errorf("postgres.DoOperation() error = %v, wantErr %v", err, tt.wantErr)
+			if _, err := p.ApplyTransaction(ctx, tt.args.d); (err != nil) != tt.wantAppErr {
+				t.Errorf("postgres.ApplyTransaction() error = %v, wantErr %v", err, tt.wantAppErr)
 			}
 
-			balance, err := p.GetBalance(ctx, tt.args.d.UserID)
-			assert.NoError(t, err, "error getting balance")
+			var balance float32
+			if balance, err = p.GetBalance(ctx, tt.args.d.UserID); (err != nil) != tt.wantBalErr {
+				t.Errorf("postgres.GetBalance() error = %v, wantErr %v", err, tt.wantBalErr)
+			}
+			//balance, err := p.GetBalance(ctx, tt.args.d.UserID)
+			//assert.NoError(t, err, "error getting balance")
 			assert.Equal(t, tt.wants, balance, "balance mismatch")
 
 		})
@@ -95,7 +103,7 @@ func Test_postgres_RollBackLastN(t *testing.T) {
 		},
 	}
 
-	dbs, err := NewDatabase(connStr)
+	dbs, err := NewDatabase(types.ServerConnStr)
 	require.NoError(t, err, "error open database")
 	ctx := context.Background()
 
@@ -183,7 +191,6 @@ func createTransactions(t *testing.T, ctx context.Context, db db.Database, userI
 	for i := 1; i <= numbTrans; i++ {
 		dop.State = types.OperationState(i%2) + 1
 		dop.Amount = float32(i)
-		dop.Amount = dop.GetAmount()
 		dop.ID = uuid.New()
 		_, err = db.ApplyTransaction(ctx, &dop)
 		require.NoError(t, err)

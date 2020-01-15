@@ -15,4 +15,5 @@ type Database interface {
 	RollBackLastN(ctx context.Context, task *types.RollBackTask) error
 	RollBackTransaction(ctx context.Context, td *types.Transaction) error
 	GetLastRecords(ctx context.Context, n int) ([]types.Transaction, error)
+	MakeStoredProc() error
 }

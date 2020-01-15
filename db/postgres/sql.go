@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -24,15 +25,7 @@ func NewDatabase(connStr string) (db.Database, error) {
 		return nil, fmt.Errorf("error open database %s", err)
 	}
 
-	out := postgres{db: dbs}
-
-	err = out.makeStoredProc()
-	if err != nil {
-		_ = dbs.Close()
-		return nil, fmt.Errorf("error creating storage procedure: %s", err)
-	}
-
-	return &out, nil
+	return &postgres{db: dbs}, nil
 }
 
 func (p *postgres) ApplyTransaction(ctx context.Context, d *types.Transaction) (float32, error) {
@@ -41,7 +34,7 @@ func (p *postgres) ApplyTransaction(ctx context.Context, d *types.Transaction) (
 
 	var result float32
 	err := row.Scan(&result)
-	if err != nil {
+	if err = convertErrors(err); err != nil {
 		return -1, err
 	}
 	if result < 0 {
@@ -49,16 +42,6 @@ func (p *postgres) ApplyTransaction(ctx context.Context, d *types.Transaction) (
 	}
 
 	return result, nil
-}
-
-func (p *postgres) makeStoredProc() error {
-	for _, query := range storedProc {
-		_, err := p.db.Exec(query)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (p *postgres) GetBalance(ctx context.Context, userId uuid.UUID) (float32, error) {
@@ -69,7 +52,10 @@ func (p *postgres) GetBalance(ctx context.Context, userId uuid.UUID) (float32, e
 	var balance float32
 	err := row.Scan(&balance)
 	if err != nil {
-		return 0, err
+		if err == sql.ErrNoRows {
+			return -1, types.ErrorUserNotExist
+		}
+		return -1, err
 	}
 
 	return balance, nil
@@ -169,7 +155,7 @@ func selectRecords(dops []types.Transaction, odd bool) []types.Transaction {
 
 func (p *postgres) RollBackTransaction(ctx context.Context, dop *types.Transaction) error {
 	query := `select * from rollback_transaction($1, $2, $3);`
-	row := p.db.QueryRowContext(ctx, query, dop.ID, -dop.GetAmount(), dop.UserID)
+	row := p.db.QueryRowContext(ctx, query, dop.ID, dop.GetAmount(), dop.UserID)
 
 	var bal float32
 	err := row.Scan(&bal)
@@ -182,4 +168,28 @@ func (p *postgres) RollBackTransaction(ctx context.Context, dop *types.Transacti
 	}
 
 	return nil
+}
+
+func (p *postgres) MakeStoredProc() error {
+	for _, query := range dropStoredProc {
+		_, _ = p.db.Exec(query)
+	}
+
+	for _, query := range storedProc {
+		_, err := p.db.Exec(query)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func convertErrors(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case strings.Contains(err.Error(), "duplicate key value violates unique constraint"):
+		return types.ErrorTransactionExist
+	}
+	return err
 }
